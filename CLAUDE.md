@@ -111,3 +111,31 @@ Multiple themes supported. Frameless window with custom title bar. Pinned Home t
 - UI language: English
 - Security: AES-256-GCM credential encryption (aes-gcm crate)
 - Settings persistence: localStorage (`ot-theme`, `ot-settings`)
+
+## Build & Release
+
+### CI/CD
+- GitHub Actions: `.github/workflows/build.yml` (PR/push 빌드), `.github/workflows/release.yml` (태그 릴리스)
+- 릴리스 트리거: `v*` 태그 push → 3플랫폼 빌드 (Windows, macOS aarch64, Ubuntu)
+- 빌드 결과물: draft release에 업로드됨
+
+### Tauri Updater (자동 업데이트)
+- **서명 방식**: minisign (Tauri 내장)
+- **공개키**: `src-tauri/tauri.conf.json` → `plugins.updater.pubkey`에 저장됨 (커밋 OK)
+- **비밀키**: `.tauri/open-terminal.key` (`.gitignore`로 제외됨, 절대 커밋 금지)
+- **CI 환경변수** (GitHub Secrets에 설정 필요):
+  - `TAURI_SIGNING_PRIVATE_KEY`: 비밀키 파일 내용 전체 (주석 줄 포함)
+  - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: 키 생성 시 입력한 비밀번호
+- **업데이트 엔드포인트**: `https://github.com/stateinfra/open-terminal/releases/latest/download/latest.json`
+- **주의**: `createUpdaterArtifacts`가 `v1Compatible`로 설정됨 — v3에서 제거 예정, 사용자 업데이트 후 `true`로 변경 필요
+
+### 키 재생성이 필요한 경우
+```bash
+npx @tauri-apps/cli signer generate -w .tauri/open-terminal.key
+```
+생성 후: 공개키 → `tauri.conf.json`, 비밀키 → GitHub Secrets 재설정
+
+## Security Notes
+- 크리덴셜: AES-256-GCM 암호화 (aes-gcm crate), 레거시 XOR에서 마이그레이션 완료
+- CSP: `src-tauri/tauri.conf.json` → `app.security.csp`
+- 민감 파일 `.gitignore` 목록: `.tauri/`, `src-tauri/.tauri-private-key`, `src-tauri/.keyfile`
