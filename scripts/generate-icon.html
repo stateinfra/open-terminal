@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head><title>Open Terminal Icon Generator</title></head>
+<body>
+<canvas id="c" width="1024" height="1024"></canvas>
+<script>
+// Open Terminal icon: terminal prompt ">" in a rounded rectangle
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
+const s = 1024;
+
+// Background: rounded rectangle with gradient
+const r = s * 0.18;
+ctx.beginPath();
+ctx.moveTo(r, 0);
+ctx.lineTo(s - r, 0);
+ctx.quadraticCurveTo(s, 0, s, r);
+ctx.lineTo(s, s - r);
+ctx.quadraticCurveTo(s, s, s - r, s);
+ctx.lineTo(r, s);
+ctx.quadraticCurveTo(0, s, 0, s - r);
+ctx.lineTo(0, r);
+ctx.quadraticCurveTo(0, 0, r, 0);
+ctx.closePath();
+
+const grad = ctx.createLinearGradient(0, 0, s, s);
+grad.addColorStop(0, '#1e1e2e');
+grad.addColorStop(1, '#313244');
+ctx.fillStyle = grad;
+ctx.fill();
+
+// Terminal prompt ">"
+ctx.font = `bold ${s * 0.52}px "Cascadia Code", "Fira Code", monospace`;
+ctx.textAlign = 'center';
+ctx.textBaseline = 'middle';
+ctx.fillStyle = '#a6e3a1';
+ctx.fillText('>', s * 0.38, s * 0.48);
+
+// Underscore cursor (blinking)
+ctx.fillStyle = '#cdd6f4';
+ctx.fillRect(s * 0.52, s * 0.58, s * 0.2, s * 0.05);
+
+// Download links
+const sizes = [32, 128, 256, 512, 1024];
+const container = document.createElement('div');
+container.style.padding = '20px';
+sizes.forEach(sz => {
+  const small = document.createElement('canvas');
+  small.width = sz; small.height = sz;
+  small.getContext('2d').drawImage(c, 0, 0, sz, sz);
+  const a = document.createElement('a');
+  a.href = small.toDataURL('image/png');
+  a.download = sz === 1024 ? 'icon.png' : sz === 256 ? '128x128@2x.png' : `${sz}x${sz}.png`;
+  a.textContent = `Download ${sz}x${sz}`;
+  a.style.marginRight = '10px';
+  container.appendChild(a);
+});
+document.body.appendChild(container);
+</script>
+</body>
+</html>
