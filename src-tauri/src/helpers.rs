@@ -7,7 +7,7 @@ use uuid::Uuid;
 // Helpers
 // ---------------------------------------------------------------------------
 
-pub(crate) fn sessions_file_path() -> Result<PathBuf, String> {
+pub fn sessions_file_path() -> Result<PathBuf, String> {
     let config_dir = dirs::config_dir().ok_or("Could not determine config directory")?;
     let app_dir = config_dir.join("open-terminal");
     std::fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
@@ -92,7 +92,7 @@ pub(crate) fn get_or_create_key() -> Result<[u8; 32], String> {
     Ok(key)
 }
 
-pub(crate) fn aes_encrypt(plaintext: &str) -> Result<String, String> {
+pub fn aes_encrypt(plaintext: &str) -> Result<String, String> {
     use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead};
     use aes_gcm::Nonce;
     use rand::RngCore;
@@ -111,7 +111,7 @@ pub(crate) fn aes_encrypt(plaintext: &str) -> Result<String, String> {
     Ok(base64::engine::general_purpose::STANDARD.encode(&combined))
 }
 
-pub(crate) fn aes_decrypt(encoded: &str) -> Result<String, String> {
+pub fn aes_decrypt(encoded: &str) -> Result<String, String> {
     use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead};
     use aes_gcm::Nonce;
     use base64::Engine;
@@ -134,7 +134,7 @@ pub(crate) fn aes_decrypt(encoded: &str) -> Result<String, String> {
     String::from_utf8(plaintext).map_err(|e| e.to_string())
 }
 
-pub(crate) fn legacy_xor_decode(s: &str) -> String {
+pub fn legacy_xor_decode(s: &str) -> String {
     let bytes: Vec<u8> = (0..s.len())
         .step_by(2)
         .filter_map(|i| s.get(i..i + 2).and_then(|h| u8::from_str_radix(h, 16).ok()))

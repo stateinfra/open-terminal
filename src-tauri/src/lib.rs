@@ -1,5 +1,8 @@
 mod types;
 mod helpers;
+
+// Re-export for integration tests
+pub use helpers::{aes_decrypt, aes_encrypt, legacy_xor_decode, sessions_file_path};
 mod pty;
 mod ssh;
 mod session;
