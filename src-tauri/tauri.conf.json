@@ -37,7 +37,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg4RTQ4NEYxOThGNTE0RkEKUldUNkZQV1k4WVRraU56dzcrbHZ3K0pqbm82WXMvVktLZ2lxVkFSNmgyV2cyVXpmMXVuYk94UHkK",
       "endpoints": [
         "https://github.com/stateinfra/open-terminal/releases/latest/download/latest.json"
       ],

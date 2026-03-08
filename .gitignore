@@ -5,3 +5,4 @@ src-tauri/target/
 .DS_Store
 src-tauri/.tauri-private-key
 src-tauri/.keyfile
+.tauri/
