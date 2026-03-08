@@ -79,7 +79,7 @@ jobs:
 
       - name: Run Rust tests
         working-directory: src-tauri
-        run: cargo test --lib --tests
+        run: cargo test --lib --tests -- --test-threads=1
 
       - name: Cargo check
         working-directory: src-tauri
