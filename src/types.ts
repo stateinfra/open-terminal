@@ -12,7 +12,6 @@ export interface Tab {
     host: string;
     port: number;
     username: string;
-    password?: string;
     keyPath?: string;
   };
 }

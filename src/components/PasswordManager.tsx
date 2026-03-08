@@ -17,6 +17,7 @@ const PasswordManager: React.FC<PasswordManagerProps> = ({ onClose, onSelectCred
   const [host, setHost] = useState('');
   const [notes, setNotes] = useState('');
   const [visiblePasswords, setVisiblePasswords] = useState<Set<string>>(new Set());
+  const [decryptedPasswords, setDecryptedPasswords] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
@@ -57,12 +58,62 @@ const PasswordManager: React.FC<PasswordManagerProps> = ({ onClose, onSelectCred
     }
   };
 
-  const toggleVisible = (id: string) => {
-    setVisiblePasswords(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
+  const toggleVisible = async (id: string) => {
+    if (visiblePasswords.has(id)) {
+      setVisiblePasswords(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      setDecryptedPasswords(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    } else {
+      try {
+        const pw = await getPassword(id);
+        setDecryptedPasswords(prev => ({ ...prev, [id]: pw }));
+        setVisiblePasswords(prev => {
+          const next = new Set(prev);
+          next.add(id);
+          return next;
+        });
+        // Auto-hide password after 10 seconds
+        setTimeout(() => {
+          setVisiblePasswords(p => {
+            const updated = new Set(p);
+            updated.delete(id);
+            return updated;
+          });
+          setDecryptedPasswords(prev => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
+        }, 10000);
+      } catch (err) {
+        setError(String(err));
+      }
+    }
+  };
+
+  // Copy password to clipboard with auto-clear after 10 seconds
+  const copyPassword = async (credId: string) => {
+    try {
+      const password = await invoke<string>('get_credential_password', { id: credId });
+      await navigator.clipboard.writeText(password);
+      setTimeout(() => {
+        navigator.clipboard.writeText('').catch(() => {});
+      }, 10000);
+    } catch (err) {
+      setError(String(err));
+    }
+  };
+
+  // Get decrypted password for use/display operations
+  const getPassword = async (credId: string): Promise<string> => {
+    return invoke<string>('get_credential_password', { id: credId });
   };
 
   return (
@@ -112,19 +163,24 @@ const PasswordManager: React.FC<PasswordManagerProps> = ({ onClose, onSelectCred
                   {cred.username}{cred.host ? ` @ ${cred.host}` : ''}
                 </div>
                 <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--subtext1)', fontFamily: 'monospace' }}>
-                  {visiblePasswords.has(cred.id) ? cred.password : '••••••••'}
+                  {visiblePasswords.has(cred.id) ? (decryptedPasswords[cred.id] || '••••••••') : '••••••••'}
                 </div>
                 {cred.notes && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--subtext0)', fontStyle: 'italic' }}>{cred.notes}</div>}
               </div>
               <button className="tree-item__action" onClick={() => toggleVisible(cred.id)} title="Show Password">
                 {visiblePasswords.has(cred.id) ? <VscEyeClosed /> : <VscEye />}
               </button>
-              <button className="tree-item__action" onClick={() => navigator.clipboard.writeText(cred.password)} title="Copy Password">
+              <button className="tree-item__action" onClick={() => copyPassword(cred.id)} title="Copy Password (auto-clears in 10s)">
                 <VscCopy />
               </button>
               {onSelectCredential && (
                 <button className="dialog__btn" style={{ fontSize: 'var(--fs-xs)', padding: '2px 8px' }}
-                  onClick={() => onSelectCredential(cred.username, cred.password)}>
+                  onClick={async () => {
+                    try {
+                      const pw = await getPassword(cred.id);
+                      onSelectCredential(cred.username, pw);
+                    } catch (err) { setError(String(err)); }
+                  }}>
                   Use
                 </button>
               )}

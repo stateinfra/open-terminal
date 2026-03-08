@@ -97,6 +97,19 @@ pub fn start_session_log(session_id: String, file_path: String) -> Result<(), St
         }
     }
 
+    // Validate log file path — must be under user's home or documents directory
+    let fp = std::path::PathBuf::from(&file_path);
+    if let Some(home) = dirs::home_dir() {
+        let canonical_parent = fp.parent()
+            .and_then(|p| std::fs::canonicalize(p).ok());
+        let canonical_home = std::fs::canonicalize(&home).ok();
+        if let (Some(parent), Some(home_c)) = (canonical_parent, canonical_home) {
+            if !parent.starts_with(&home_c) {
+                return Err("Log file path must be under your home directory".to_string());
+            }
+        }
+    }
+
     let (tx, rx) = std::sync::mpsc::channel::<String>();
 
     // Spawn writer thread

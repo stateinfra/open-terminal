@@ -39,7 +39,19 @@ pub fn create_local_session(shell: Option<String>, app_handle: AppHandle) -> Res
     });
 
     let mut cmd = CommandBuilder::new(&shell_program);
+    // Filter out sensitive environment variables
+    const SENSITIVE_VARS: &[&str] = &[
+        "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
+        "GITHUB_TOKEN", "GH_TOKEN", "GITLAB_TOKEN",
+        "DATABASE_URL", "DB_PASSWORD",
+        "API_KEY", "API_SECRET", "SECRET_KEY", "PRIVATE_KEY",
+        "TAURI_SIGNING_PRIVATE_KEY", "TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
+    ];
     for (key, value) in std::env::vars() {
+        let upper = key.to_uppercase();
+        if SENSITIVE_VARS.iter().any(|s| upper == *s) {
+            continue;
+        }
         cmd.env(key, value);
     }
 

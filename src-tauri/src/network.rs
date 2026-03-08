@@ -234,6 +234,7 @@ fn get_service_name(port: u16) -> String {
 
 #[tauri::command]
 pub fn scan_ports(host: String, start_port: u16, end_port: u16) -> Result<Vec<PortScanResult>, String> {
+    validate_hostname(&host)?;
     if end_port < start_port {
         return Err("end_port must be >= start_port".to_string());
     }
@@ -315,8 +316,21 @@ pub fn send_wol(mac_address: String) -> Result<(), String> {
 // Network Tools
 // ---------------------------------------------------------------------------
 
+/// Validate hostname/IP to prevent command injection via malformed input
+fn validate_hostname(host: &str) -> Result<(), String> {
+    if host.is_empty() || host.len() > 253 {
+        return Err("Invalid hostname length".to_string());
+    }
+    // Only allow alphanumeric, dots, hyphens, colons (IPv6), and square brackets
+    if !host.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == ':' || c == '[' || c == ']') {
+        return Err("Hostname contains invalid characters".to_string());
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn run_ping(host: String, count: Option<u32>) -> Result<String, String> {
+    validate_hostname(&host)?;
     let count = count.unwrap_or(4);
 
     let output = if cfg!(target_os = "windows") {
@@ -343,6 +357,7 @@ pub fn run_ping(host: String, count: Option<u32>) -> Result<String, String> {
 
 #[tauri::command]
 pub fn run_traceroute(host: String) -> Result<String, String> {
+    validate_hostname(&host)?;
     let output = if cfg!(target_os = "windows") {
         std::process::Command::new("tracert")
             .arg(&host)
@@ -367,6 +382,7 @@ pub fn run_traceroute(host: String) -> Result<String, String> {
 
 #[tauri::command]
 pub fn run_nslookup(host: String) -> Result<String, String> {
+    validate_hostname(&host)?;
     let output = std::process::Command::new("nslookup")
         .arg(&host)
         .output()
@@ -388,7 +404,8 @@ pub fn run_nslookup(host: String) -> Result<String, String> {
 
 #[tauri::command]
 pub fn start_http_server(root_path: String, port: u16) -> Result<String, String> {
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", port))
+    // Bind only to localhost to prevent external access
+    let listener = TcpListener::bind(format!("127.0.0.1:{}", port))
         .map_err(|e| format!("Failed to bind port {}: {}", port, e))?;
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
 
@@ -411,15 +428,20 @@ pub fn start_http_server(root_path: String, port: u16) -> Result<String, String>
                             .unwrap_or("/");
 
                         let file_path = if path == "/" {
-                            // List directory
+                            // List directory (skip hidden/dot files)
                             let entries = std::fs::read_dir(&root).ok();
                             let mut html = String::from("<html><head><meta charset='utf-8'><title>File Server</title><style>body{font-family:monospace;background:#1e1e2e;color:#cdd6f4;padding:20px}a{color:#89b4fa;text-decoration:none}a:hover{text-decoration:underline}li{padding:4px 0}</style></head><body><h2>Index of /</h2><ul>");
                             if let Some(entries) = entries {
                                 for entry in entries.flatten() {
                                     let name = entry.file_name().to_string_lossy().to_string();
+                                    // Skip hidden files (dotfiles)
+                                    if name.starts_with('.') { continue; }
                                     let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
                                     let display = if is_dir { format!("{}/", name) } else { name.clone() };
-                                    html.push_str(&format!("<li><a href='/{}'>{}</a></li>", name, display));
+                                    // HTML-escape the name to prevent XSS
+                                    let safe_name = name.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+                                    let safe_display = display.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+                                    html.push_str(&format!("<li><a href='/{}'>{}</a></li>", safe_name, safe_display));
                                 }
                             }
                             html.push_str("</ul></body></html>");
@@ -427,8 +449,27 @@ pub fn start_http_server(root_path: String, port: u16) -> Result<String, String>
                             let _ = stream.write_all(response.as_bytes());
                             return;
                         } else {
-                            let decoded = path.trim_start_matches('/');
-                            std::path::PathBuf::from(&root).join(decoded)
+                            let decoded = urlencoding::decode(path.trim_start_matches('/')).unwrap_or_default().to_string();
+                            let candidate = std::path::PathBuf::from(&root).join(&decoded);
+                            // Prevent path traversal: canonicalize and verify within root
+                            let root_canonical = match std::fs::canonicalize(&root) {
+                                Ok(p) => p,
+                                Err(_) => {
+                                    let body = "500 Internal Error";
+                                    let response = format!("HTTP/1.1 500 Internal Server Error\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
+                                    let _ = stream.write_all(response.as_bytes());
+                                    return;
+                                }
+                            };
+                            match std::fs::canonicalize(&candidate) {
+                                Ok(resolved) if resolved.starts_with(&root_canonical) => resolved,
+                                _ => {
+                                    let body = "403 Forbidden";
+                                    let response = format!("HTTP/1.1 403 Forbidden\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
+                                    let _ = stream.write_all(response.as_bytes());
+                                    return;
+                                }
+                            }
                         };
 
                         if file_path.exists() && file_path.is_file() {

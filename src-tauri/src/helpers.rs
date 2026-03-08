@@ -1,7 +1,39 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use ssh2::Session as Ssh2Session;
 use uuid::Uuid;
+
+/// Set restrictive file permissions (0o600) on Unix systems
+#[cfg(unix)]
+pub(crate) fn set_restrictive_permissions(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+}
+
+#[cfg(not(unix))]
+pub(crate) fn set_restrictive_permissions(_path: &Path) {
+    // Windows uses ACLs; file inherits parent directory permissions
+}
+
+/// Validate a file path stays within allowed directories
+pub(crate) fn validate_path_within(path: &str, allowed_parent: &Path) -> Result<PathBuf, String> {
+    let candidate = PathBuf::from(path);
+    let canonical = std::fs::canonicalize(&candidate)
+        .or_else(|_| {
+            // If file doesn't exist yet, canonicalize the parent
+            candidate.parent()
+                .and_then(|p| std::fs::canonicalize(p).ok())
+                .map(|p| p.join(candidate.file_name().unwrap_or_default()))
+                .ok_or_else(|| "Invalid path".to_string())
+        })
+        .map_err(|_| format!("Cannot resolve path: {}", path))?;
+    let allowed = std::fs::canonicalize(allowed_parent)
+        .map_err(|_| "Cannot resolve allowed directory".to_string())?;
+    if !canonical.starts_with(&allowed) {
+        return Err("Path traversal denied: path is outside allowed directory".to_string());
+    }
+    Ok(canonical)
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -46,13 +78,17 @@ pub(crate) fn ssh_authenticate(
         let temp_key = temp_dir.join(format!("ot_key_{}", Uuid::new_v4()));
         std::fs::write(&temp_key, &key_data)
             .map_err(|e| format!("Cannot write temp key: {}", e))?;
+        // Restrict temp key file permissions
+        set_restrictive_permissions(&temp_key);
 
         let result = sess.userauth_pubkey_file(
             username, None, &temp_key, None,
         );
 
-        // Clean up temp key immediately
-        let _ = std::fs::remove_file(&temp_key);
+        // Clean up temp key immediately — log if removal fails
+        if let Err(e) = std::fs::remove_file(&temp_key) {
+            eprintln!("WARNING: Failed to remove temp key file {}: {}", temp_key.display(), e);
+        }
 
         result.map_err(|e| format!("Key auth failed: {}", e))?;
     } else if let Some(pass) = password {
@@ -89,6 +125,8 @@ pub(crate) fn get_or_create_key() -> Result<[u8; 32], String> {
     rand::thread_rng().fill_bytes(&mut key);
     std::fs::create_dir_all(key_path.parent().unwrap()).map_err(|e| e.to_string())?;
     std::fs::write(&key_path, &key).map_err(|e| e.to_string())?;
+    // Restrict key file to owner-only access
+    set_restrictive_permissions(&key_path);
     Ok(key)
 }
 
@@ -118,20 +156,26 @@ pub fn aes_decrypt(encoded: &str) -> Result<String, String> {
 
     let key_bytes = get_or_create_key()?;
     let cipher = Aes256Gcm::new_from_slice(&key_bytes).map_err(|e| e.to_string())?;
-    let combined = base64::engine::general_purpose::STANDARD.decode(encoded)
-        .map_err(|e| format!("Base64 decode failed: {}", e))?;
+    let combined = match base64::engine::general_purpose::STANDARD.decode(encoded) {
+        Ok(data) => data,
+        Err(_) => {
+            // Not valid base64 — try legacy XOR decode for migration
+            return Ok(legacy_xor_decode(encoded));
+        }
+    };
     if combined.len() < 13 {
-        // Fallback: try legacy XOR decode for migration
+        // Too short for AES-GCM — try legacy XOR decode for migration
         return Ok(legacy_xor_decode(encoded));
     }
     let (nonce_bytes, ciphertext) = combined.split_at(12);
     let nonce = Nonce::from_slice(nonce_bytes);
-    let plaintext = cipher.decrypt(nonce, ciphertext)
-        .map_err(|_| {
-            // Decryption failed — try legacy XOR decode for migration
-            format!("LEGACY:{}", encoded)
-        })?;
-    String::from_utf8(plaintext).map_err(|e| e.to_string())
+    match cipher.decrypt(nonce, ciphertext) {
+        Ok(plaintext) => String::from_utf8(plaintext).map_err(|e| e.to_string()),
+        Err(_) => {
+            // AES decryption failed — try legacy XOR decode for migration
+            Ok(legacy_xor_decode(encoded))
+        }
+    }
 }
 
 pub fn legacy_xor_decode(s: &str) -> String {

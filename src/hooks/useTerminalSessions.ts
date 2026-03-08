@@ -91,7 +91,6 @@ export function useTerminalSessions() {
         host: params.host,
         port: params.port,
         username: params.username,
-        password: params.password,
         keyPath: params.keyPath,
       },
     };
@@ -231,17 +230,25 @@ export function useTerminalSessions() {
         t.id === tab.id ? { ...t, disconnected: true } : t
       ));
 
-      // Attempt reconnect after 3 seconds
+      // Attempt reconnect after 3 seconds using credential store lookup
       const info = tab.sshInfo;
       setTimeout(async () => {
         try {
-          const newSessionId = await invoke<string>('create_ssh_session', {
-            host: info.host,
-            port: info.port,
-            username: info.username,
-            password: info.password,
-            keyPath: info.keyPath,
-          });
+          // Try auto-connect via credential store (no plaintext password in frontend)
+          let newSessionId: string;
+          try {
+            newSessionId = await invoke<string>('auto_connect_session', {
+              sessionName: tab.name,
+            });
+          } catch {
+            // Fallback: reconnect with key-only auth
+            newSessionId = await invoke<string>('create_ssh_session', {
+              host: info.host,
+              port: info.port,
+              username: info.username,
+              keyPath: info.keyPath,
+            });
+          }
           setTabs(prev => prev.map(t =>
             t.id === tab.id ? { ...t, sessionId: newSessionId, disconnected: false } : t
           ));

@@ -106,6 +106,7 @@ pub fn run() {
             // Password Manager
             credentials::save_credential,
             credentials::load_credentials,
+            credentials::get_credential_password,
             credentials::delete_credential,
             // Macro Recording
             credentials::save_macro,

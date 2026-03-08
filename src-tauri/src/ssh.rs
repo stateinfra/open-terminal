@@ -198,7 +198,7 @@ pub fn create_proxy_ssh_session(
         cmd.arg(key);
     }
     cmd.arg("-o");
-    cmd.arg("StrictHostKeyChecking=no");
+    cmd.arg("StrictHostKeyChecking=accept-new");
 
     let child = pair.slave.spawn_command(cmd)
         .map_err(|e| format!("Failed to spawn ssh: {}", e))?;

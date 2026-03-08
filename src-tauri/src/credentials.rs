@@ -230,7 +230,7 @@ pub struct CredentialEntry {
     id: String,
     label: String,
     username: String,
-    password: String, // base64 encoded (simple obfuscation, not true encryption)
+    password: String, // AES-256-GCM encrypted
     host: Option<String>,
     notes: Option<String>,
 }
@@ -239,6 +239,7 @@ fn credentials_file_path() -> Result<PathBuf, String> {
     let config_dir = dirs::config_dir().ok_or("Could not determine config directory")?;
     let app_dir = config_dir.join("open-terminal");
     std::fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
+    set_restrictive_permissions(&app_dir);
     Ok(app_dir.join("credentials.json"))
 }
 
@@ -267,26 +268,44 @@ pub fn save_credential(label: String, username: String, password: String, host: 
     Ok(())
 }
 
-#[tauri::command]
-pub fn load_credentials() -> Result<Vec<CredentialEntry>, String> {
+/// Internal function to load and decrypt credentials
+fn load_credentials_internal() -> Result<Vec<CredentialEntry>, String> {
     let path = credentials_file_path()?;
     if !path.exists() {
         return Ok(Vec::new());
     }
     let data = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    let mut creds: Vec<CredentialEntry> = serde_json::from_str(&data).unwrap_or_default();
-    // Decrypt passwords for display
+    let mut creds: Vec<CredentialEntry> = serde_json::from_str(&data)
+        .map_err(|e| format!("Corrupted credentials file: {}", e))?;
+    // Decrypt passwords
     for c in &mut creds {
         match aes_decrypt(&c.password) {
             Ok(plain) => c.password = plain,
-            Err(e) if e.starts_with("LEGACY:") => {
-                // Legacy XOR-encoded password — migrate
-                c.password = legacy_xor_decode(&e[7..]);
-            }
             Err(_) => c.password = String::new(),
         }
     }
     Ok(creds)
+}
+
+#[tauri::command]
+pub fn load_credentials() -> Result<Vec<CredentialEntry>, String> {
+    let mut creds = load_credentials_internal()?;
+    // Mask passwords before sending to frontend
+    for c in &mut creds {
+        if !c.password.is_empty() {
+            c.password = "••••••••".to_string();
+        }
+    }
+    Ok(creds)
+}
+
+/// Get a single credential's decrypted password by ID (for auto-login / use operations)
+#[tauri::command]
+pub fn get_credential_password(id: String) -> Result<String, String> {
+    let creds = load_credentials_internal()?;
+    let cred = creds.iter().find(|c| c.id == id)
+        .ok_or_else(|| "Credential not found".to_string())?;
+    Ok(cred.password.clone())
 }
 
 #[tauri::command]
@@ -388,22 +407,52 @@ pub fn distribute_public_key(host: String, port: u16, username: String, password
     sess.handshake().map_err(|e| e.to_string())?;
     sess.userauth_password(&username, &password).map_err(|e| e.to_string())?;
 
-    let cmd = format!(
-        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '{}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys",
-        pub_key
-    );
-    let mut channel = sess.channel_session().map_err(|e| e.to_string())?;
-    channel.exec(&cmd).map_err(|e| e.to_string())?;
-    let mut output = String::new();
-    std::io::Read::read_to_string(&mut channel, &mut output).map_err(|e| e.to_string())?;
-    channel.wait_close().map_err(|e| e.to_string())?;
-
-    let exit = channel.exit_status().unwrap_or(-1);
-    if exit == 0 {
-        Ok(format!("Public key deployed to {}@{}", username, host))
-    } else {
-        Err(format!("Failed with exit code {}: {}", exit, output))
+    // Validate public key format to prevent injection
+    if !pub_key.starts_with("ssh-") && !pub_key.starts_with("ecdsa-") {
+        return Err("Invalid public key format".to_string());
     }
+    if pub_key.contains('\n') || pub_key.contains('\r') || pub_key.contains('\'') || pub_key.contains(';') || pub_key.contains('|') || pub_key.contains('`') {
+        return Err("Public key contains invalid characters".to_string());
+    }
+
+    // Use SFTP to safely write the key without shell command injection
+    let sftp = sess.sftp().map_err(|e| format!("SFTP init failed: {}", e))?;
+
+    // Ensure .ssh directory exists
+    let _ = sftp.mkdir(std::path::Path::new(".ssh"), 0o700);
+
+    // Read existing authorized_keys (may not exist)
+    let existing = match sftp.open(std::path::Path::new(".ssh/authorized_keys")) {
+        Ok(mut f) => {
+            let mut buf = String::new();
+            std::io::Read::read_to_string(&mut f, &mut buf).unwrap_or(0);
+            buf
+        }
+        Err(_) => String::new(),
+    };
+
+    // Check if key already exists
+    if existing.lines().any(|line| line.trim() == pub_key) {
+        return Ok(format!("Public key already exists on {}@{}", username, host));
+    }
+
+    // Append key
+    let new_content = if existing.is_empty() || existing.ends_with('\n') {
+        format!("{}{}\n", existing, pub_key)
+    } else {
+        format!("{}\n{}\n", existing, pub_key)
+    };
+
+    let mut file = sftp.create(std::path::Path::new(".ssh/authorized_keys"))
+        .map_err(|e| format!("Failed to write authorized_keys: {}", e))?;
+    std::io::Write::write_all(&mut file, new_content.as_bytes())
+        .map_err(|e| format!("Failed to write key: {}", e))?;
+
+    // Set correct permissions
+    let _ = sftp.setstat(std::path::Path::new(".ssh/authorized_keys"),
+        ssh2::FileStat { perm: Some(0o600), size: None, uid: None, gid: None, atime: None, mtime: None });
+
+    Ok(format!("Public key deployed to {}@{}", username, host))
 }
 
 // ---------------------------------------------------------------------------
