@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   VscTerminal, VscRemoteExplorer, VscCircleFilled,
   VscPackage, VscVm, VscPlug, VscFolder, VscCloudUpload,
   VscDesktopDownload, VscScreenFull,
   VscChevronDown, VscChevronRight,
+  VscEdit, VscTrash, VscCopy, VscDebugStart,
 } from 'react-icons/vsc';
 import {
   FaWindows, FaLinux, FaApple, FaFreebsd, FaDocker,
@@ -15,6 +16,7 @@ import {
 import { FaAmazon } from 'react-icons/fa';
 import { invoke } from '@tauri-apps/api/core';
 import { SavedSession, HealthResult, SystemInfo, RemoteOsInfo } from '../types';
+import EditSessionDialog from './EditSessionDialog';
 
 interface WelcomeTabProps {
   onNewLocal: () => void;
@@ -91,6 +93,10 @@ const WelcomeTab: React.FC<WelcomeTabProps> = ({ onNewLocal, onConnectSession, o
   const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [remoteOsCache, setRemoteOsCache] = useState<Record<string, RemoteOsInfo>>({});
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; session: SavedSession } | null>(null);
+  const [editingSession, setEditingSession] = useState<SavedSession | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState(false);
+  const ctxRef = useRef<HTMLDivElement>(null);
 
   const loadSessions = useCallback(async () => {
     try {
@@ -110,6 +116,47 @@ const WelcomeTab: React.FC<WelcomeTabProps> = ({ onNewLocal, onConnectSession, o
     loadSessions();
     loadSystemInfo();
   }, [loadSessions, loadSystemInfo, refreshKey]);
+
+  // Close context menu on click outside
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) {
+        setCtxMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [ctxMenu]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, session: SavedSession) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCtxMenu({ x: e.clientX, y: e.clientY, session });
+  }, []);
+
+  const handleDeleteSession = useCallback(async (name: string) => {
+    try {
+      await invoke('delete_session', { name });
+      loadSessions();
+    } catch { /* ignore */ }
+    setCtxMenu(null);
+  }, [loadSessions]);
+
+  const handleCopyPassword = useCallback(async (session: SavedSession) => {
+    try {
+      const password = await invoke<string>('find_credential_password', {
+        host: session.host || '',
+        username: session.username || '',
+      });
+      await navigator.clipboard.writeText(password);
+      setCopyFeedback(true);
+      setTimeout(() => setCopyFeedback(false), 1500);
+    } catch {
+      // No credential found
+    }
+    setCtxMenu(null);
+  }, []);
 
   useEffect(() => {
     const sshList = sessions.filter((s) => s.session_type === 'ssh' && s.host);
@@ -250,6 +297,7 @@ const WelcomeTab: React.FC<WelcomeTabProps> = ({ onNewLocal, onConnectSession, o
                       className="hub__row"
                       onClick={() => toggleExpand(itemKey)}
                       onDoubleClick={() => onConnectSession?.(session)}
+                      onContextMenu={(e) => handleContextMenu(e, session)}
                     >
                       <span className="hub__row-expand">
                         {isExpanded ? <VscChevronDown /> : <VscChevronRight />}
@@ -328,6 +376,7 @@ const WelcomeTab: React.FC<WelcomeTabProps> = ({ onNewLocal, onConnectSession, o
                   key={session.name}
                   className="hub__row"
                   onClick={() => onConnectSession?.(session)}
+                  onContextMenu={(e) => handleContextMenu(e, session)}
                 >
                   <span className="hub__row-icon">{SESSION_ICONS[session.session_type] || <VscTerminal />}</span>
                   <span className="hub__row-name">{session.name}</span>
@@ -359,6 +408,40 @@ const WelcomeTab: React.FC<WelcomeTabProps> = ({ onNewLocal, onConnectSession, o
           <span key={p} className="hub__badge">{p}</span>
         ))}
       </div>
+
+      {/* Context menu */}
+      {ctxMenu && (
+        <div
+          ref={ctxRef}
+          className="context-menu"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+        >
+          <button className="context-menu__item" onClick={() => { onConnectSession?.(ctxMenu.session); setCtxMenu(null); }}>
+            <VscDebugStart /> Connect
+          </button>
+          <button className="context-menu__item" onClick={() => { setEditingSession(ctxMenu.session); setCtxMenu(null); }}>
+            <VscEdit /> Edit
+          </button>
+          {ctxMenu.session.session_type === 'ssh' && (
+            <button className="context-menu__item" onClick={() => handleCopyPassword(ctxMenu.session)}>
+              <VscCopy /> {copyFeedback ? 'Copied!' : 'Copy Password'}
+            </button>
+          )}
+          <div className="context-menu__sep" />
+          <button className="context-menu__item context-menu__item--danger" onClick={() => handleDeleteSession(ctxMenu.session.name)}>
+            <VscTrash /> Delete
+          </button>
+        </div>
+      )}
+
+      {/* Edit session dialog */}
+      {editingSession && (
+        <EditSessionDialog
+          session={editingSession}
+          onSave={loadSessions}
+          onClose={() => setEditingSession(null)}
+        />
+      )}
     </div>
   );
 };

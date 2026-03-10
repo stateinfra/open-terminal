@@ -308,6 +308,16 @@ pub fn get_credential_password(id: String) -> Result<String, String> {
     Ok(cred.password.clone())
 }
 
+/// Find a credential's decrypted password by host and username
+#[tauri::command]
+pub fn find_credential_password(host: String, username: String) -> Result<String, String> {
+    let creds = load_credentials_internal()?;
+    let cred = creds.iter().find(|c| {
+        c.host.as_deref() == Some(&host) && c.username == username
+    }).ok_or_else(|| "No credential found for this host/username".to_string())?;
+    Ok(cred.password.clone())
+}
+
 #[tauri::command]
 pub fn delete_credential(id: String) -> Result<(), String> {
     let path = credentials_file_path()?;
