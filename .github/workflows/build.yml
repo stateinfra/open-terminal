@@ -87,8 +87,6 @@ jobs:
 
       - name: Build Tauri app
         run: npx tauri build
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ""
 
       - name: Upload build artifacts (Windows)
         if: matrix.platform == 'windows-latest'
