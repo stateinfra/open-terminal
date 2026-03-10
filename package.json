@@ -1,6 +1,6 @@
 {
   "name": "open-terminal",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Open-source terminal emulator with SSH, SFTP, and session management",
   "private": true,
   "scripts": {
