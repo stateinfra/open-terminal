@@ -315,7 +315,12 @@ const App: React.FC = () => {
   }, []);
 
   return (
-    <div className="app-layout">
+    <div className="app-layout" onContextMenu={(e) => {
+      // Allow custom context menus in WelcomeTab/SftpSidebar, block browser default
+      if (!(e.target as HTMLElement).closest('.context-menu')) {
+        e.preventDefault();
+      }
+    }}>
       <TitleBar />
       <div className="app-body">
         <SessionManager

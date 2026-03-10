@@ -21,20 +21,33 @@ pub struct FileEntry {
     pub modified: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct SavedSession {
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub session_type: String,
+    #[serde(default)]
     pub host: Option<String>,
+    #[serde(default)]
     pub port: Option<u16>,
+    #[serde(default)]
     pub username: Option<String>,
+    #[serde(default)]
     pub auth_type: Option<String>,
+    #[serde(default)]
     pub identity_file: Option<String>,
+    #[serde(default)]
     pub shell: Option<String>,
+    #[serde(default)]
     pub group: Option<String>,
+    #[serde(default)]
     pub tags: Option<Vec<String>>,
+    #[serde(default)]
     pub color: Option<String>,
+    #[serde(default)]
     pub baud_rate: Option<u32>,
+    #[serde(default)]
     pub serial_port: Option<String>,
 }
 

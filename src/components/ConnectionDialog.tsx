@@ -132,19 +132,23 @@ const ConnectionDialog: React.FC<ConnectionDialogProps> = ({
             session: {
               name: autoName,
               session_type: protocol,
-              host: needsHost ? host : undefined,
-              port: needsHost ? port : undefined,
-              username: needsUsername ? username : undefined,
-              auth_type: needsAuth ? authType : undefined,
-              identity_file: authType === 'key' ? identityFile : undefined,
-              shell: undefined,
-              group: undefined,
-              baud_rate: protocol === 'serial' ? baudRate : undefined,
-              serial_port: protocol === 'serial' ? serialPort : undefined,
+              host: needsHost ? host : null,
+              port: needsHost ? port : null,
+              username: needsUsername ? username : null,
+              auth_type: needsAuth ? authType : null,
+              identity_file: authType === 'key' ? identityFile : null,
+              shell: null,
+              group: null,
+              tags: null,
+              color: null,
+              baud_rate: protocol === 'serial' ? baudRate : null,
+              serial_port: protocol === 'serial' ? serialPort : null,
             },
           });
           onSessionSaved?.();
-        } catch { /* saving is optional */ }
+        } catch (saveErr) {
+          console.error('Failed to save session:', saveErr);
+        }
       }
     } catch (err: any) {
       setError(String(err));
