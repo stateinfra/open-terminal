@@ -20,6 +20,7 @@ interface WelcomeTabProps {
   onNewLocal: () => void;
   onConnectSession?: (session: SavedSession) => void;
   onOpenShell?: (shell: string) => void;
+  refreshKey?: number;
 }
 
 const SESSION_ICONS: Record<string, React.ReactNode> = {
@@ -84,7 +85,7 @@ function guessRemoteShells(os: string): string[] {
   return ['sh'];
 }
 
-const WelcomeTab: React.FC<WelcomeTabProps> = ({ onNewLocal, onConnectSession, onOpenShell }) => {
+const WelcomeTab: React.FC<WelcomeTabProps> = ({ onNewLocal, onConnectSession, onOpenShell, refreshKey }) => {
   const [sessions, setSessions] = useState<SavedSession[]>([]);
   const [healthCache, setHealthCache] = useState<Record<string, HealthResult>>({});
   const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null);
@@ -108,7 +109,7 @@ const WelcomeTab: React.FC<WelcomeTabProps> = ({ onNewLocal, onConnectSession, o
   useEffect(() => {
     loadSessions();
     loadSystemInfo();
-  }, [loadSessions, loadSystemInfo]);
+  }, [loadSessions, loadSystemInfo, refreshKey]);
 
   useEffect(() => {
     const sshList = sessions.filter((s) => s.session_type === 'ssh' && s.host);

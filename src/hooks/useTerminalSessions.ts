@@ -273,7 +273,7 @@ export function useTerminalSessions() {
   return {
     tabs, activeTabId, terminalSize,
     broadcastMode, broadcastTargets,
-    selectTab, createLocalTab, createSshTab,
+    addTab, selectTab, createLocalTab, createSshTab,
     createTelnetTab, createSerialTab, createFtpTab,
     createS3Tab, createDockerTab, createWslTab,
     launchRdp, launchVnc,

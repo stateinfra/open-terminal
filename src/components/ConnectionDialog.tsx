@@ -27,6 +27,7 @@ interface ConnectionDialogProps {
   onLaunchVnc: (host: string, port?: number) => void;
   onConnectS3: (bucket: string, region?: string, accessKey?: string, secretKey?: string, endpoint?: string, name?: string) => void;
   onClose: () => void;
+  onSessionSaved?: () => void;
 }
 
 const PROTOCOLS: { id: Protocol; icon: React.ReactNode; label: string }[] = [
@@ -41,7 +42,7 @@ const PROTOCOLS: { id: Protocol; icon: React.ReactNode; label: string }[] = [
 
 const ConnectionDialog: React.FC<ConnectionDialogProps> = ({
   onConnect, onConnectTelnet, onConnectSerial, onConnectFtp,
-  onLaunchRdp, onLaunchVnc, onConnectS3, onClose,
+  onLaunchRdp, onLaunchVnc, onConnectS3, onClose, onSessionSaved,
 }) => {
   const [protocol, setProtocol] = useState<Protocol>('ssh');
   const [host, setHost] = useState('');
@@ -142,6 +143,7 @@ const ConnectionDialog: React.FC<ConnectionDialogProps> = ({
               serial_port: protocol === 'serial' ? serialPort : undefined,
             },
           });
+          onSessionSaved?.();
         } catch { /* saving is optional */ }
       }
     } catch (err: any) {

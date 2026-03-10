@@ -38,13 +38,13 @@ import {
   VscPulse, VscGlobe, VscSymbolVariable,
 } from 'react-icons/vsc';
 import { useTerminalSessions } from './hooks/useTerminalSessions';
-import { SavedSession } from './types';
+import type { Tab, SessionType, SavedSession } from './types';
 
 const App: React.FC = () => {
   const {
     tabs, activeTabId, terminalSize,
     broadcastMode, broadcastTargets,
-    selectTab, createLocalTab, createSshTab,
+    addTab, selectTab, createLocalTab, createSshTab,
     createTelnetTab, createSerialTab, createFtpTab,
     createS3Tab, createDockerTab, createWslTab,
     launchRdp, launchVnc,
@@ -179,22 +179,52 @@ const App: React.FC = () => {
   );
 
   const handleConnectSession = useCallback(
-    (session: SavedSession) => {
-      if (session.session_type === 'local') {
-        createLocalTab(session.name);
-      } else if (session.session_type === 'ssh' && session.host && session.username) {
-        createSshTab({
-          host: session.host, port: session.port || 22,
-          username: session.username, keyPath: session.identity_file, name: session.name,
-          color: session.color,
-        });
-      } else if (session.session_type === 'telnet' && session.host) {
-        createTelnetTab(session.host, session.port || 23, session.name);
-      } else if (session.session_type === 'serial' && session.serial_port) {
-        createSerialTab(session.serial_port, session.baud_rate || 9600, session.name);
+    async (session: SavedSession) => {
+      try {
+        if (session.session_type === 'local') {
+          await createLocalTab(session.name);
+        } else if (session.session_type === 'ssh' && session.host && session.username) {
+          // Try auto_connect_session first (resolves credentials from store)
+          try {
+            const sessionId = await invoke<string>('auto_connect_session', {
+              sessionName: session.name,
+            });
+            let sftpId: string | undefined;
+            try {
+              sftpId = await invoke<string>('sftp_connect', {
+                host: session.host,
+                port: session.port || 22,
+                username: session.username,
+                keyPath: session.identity_file,
+              });
+            } catch { /* SFTP optional */ }
+            addTab({
+              id: `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+              name: session.name || `${session.username}@${session.host}`,
+              type: 'ssh' as SessionType,
+              sessionId,
+              sftpId,
+              color: session.color,
+            });
+          } catch {
+            // Fallback to direct connection without password
+            await createSshTab({
+              host: session.host, port: session.port || 22,
+              username: session.username, keyPath: session.identity_file, name: session.name,
+              color: session.color,
+            });
+          }
+        } else if (session.session_type === 'telnet' && session.host) {
+          await createTelnetTab(session.host, session.port || 23, session.name);
+        } else if (session.session_type === 'serial' && session.serial_port) {
+          await createSerialTab(session.serial_port, session.baud_rate || 9600, session.name);
+        }
+      } catch (err) {
+        setGlobalError(`Connection failed: ${err}`);
+        setTimeout(() => setGlobalError(''), 5000);
       }
     },
-    [createLocalTab, createSshTab, createTelnetTab, createSerialTab]
+    [createLocalTab, createSshTab, createTelnetTab, createSerialTab, addTab]
   );
 
   // Command Palette actions
@@ -356,6 +386,7 @@ const App: React.FC = () => {
             {/* Home tab (WelcomeTab) */}
             <div className={`terminal-wrapper ${isHomeActive ? '' : 'terminal-wrapper--hidden'}`}>
               <WelcomeTab
+                refreshKey={sessionRefreshKey}
                 onNewLocal={() => { createLocalTab().then(() => setIsHomeActive(false)).catch((err) => {
                   setGlobalError(`Failed to create local terminal: ${err}`);
                   setTimeout(() => setGlobalError(''), 5000);
@@ -448,6 +479,7 @@ const App: React.FC = () => {
             setSessionRefreshKey((k) => k + 1);
           }}
           onClose={() => setShowConnectionDialog(false)}
+          onSessionSaved={() => setSessionRefreshKey((k) => k + 1)}
         />
       )}
 
