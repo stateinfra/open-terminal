@@ -85,6 +85,37 @@ const ConnectionDialog: React.FC<ConnectionDialogProps> = ({
     try {
       const autoName = sessionName || (needsHost ? `${host}:${port}` : protocol === 'serial' ? serialPort : s3Bucket);
 
+      // Validate before saving
+      if (protocol === 'serial' && !serialPort) { setError('Select a serial port'); setConnecting(false); return; }
+      if (protocol === 's3' && !s3Bucket.trim()) { setError('Enter a bucket name'); setConnecting(false); return; }
+
+      // Save session FIRST (before connect closes the dialog)
+      if (saveSession && autoName) {
+        try {
+          await invoke('save_session', {
+            session: {
+              name: autoName,
+              session_type: protocol,
+              host: needsHost ? host : null,
+              port: needsHost ? port : null,
+              username: needsUsername ? username : null,
+              auth_type: needsAuth ? authType : null,
+              identity_file: authType === 'key' ? identityFile : null,
+              shell: null,
+              group: null,
+              tags: null,
+              color: null,
+              baud_rate: protocol === 'serial' ? baudRate : null,
+              serial_port: protocol === 'serial' ? serialPort : null,
+            },
+          });
+          onSessionSaved?.();
+        } catch (saveErr) {
+          console.error('Failed to save session:', saveErr);
+        }
+      }
+
+      // Then connect
       switch (protocol) {
         case 'ssh':
           await onConnect({
@@ -111,44 +142,16 @@ const ConnectionDialog: React.FC<ConnectionDialogProps> = ({
           onClose();
           break;
         case 'serial':
-          if (!serialPort) { setError('Select a serial port'); setConnecting(false); return; }
           await onConnectSerial(serialPort, baudRate, sessionName || undefined);
           onClose();
           break;
         case 's3':
-          if (!s3Bucket.trim()) { setError('Enter a bucket name'); setConnecting(false); return; }
           await onConnectS3(
             s3Bucket, s3Region || undefined, s3AccessKey || undefined,
             s3SecretKey || undefined, s3Endpoint || undefined, sessionName || undefined,
           );
           onClose();
           break;
-      }
-
-      // Save session to local storage if checkbox is checked
-      if (saveSession && autoName) {
-        try {
-          await invoke('save_session', {
-            session: {
-              name: autoName,
-              session_type: protocol,
-              host: needsHost ? host : null,
-              port: needsHost ? port : null,
-              username: needsUsername ? username : null,
-              auth_type: needsAuth ? authType : null,
-              identity_file: authType === 'key' ? identityFile : null,
-              shell: null,
-              group: null,
-              tags: null,
-              color: null,
-              baud_rate: protocol === 'serial' ? baudRate : null,
-              serial_port: protocol === 'serial' ? serialPort : null,
-            },
-          });
-          onSessionSaved?.();
-        } catch (saveErr) {
-          console.error('Failed to save session:', saveErr);
-        }
       }
     } catch (err: any) {
       setError(String(err));
