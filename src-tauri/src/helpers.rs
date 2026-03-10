@@ -36,6 +36,45 @@ pub(crate) fn validate_path_within(path: &str, allowed_parent: &Path) -> Result<
 }
 
 // ---------------------------------------------------------------------------
+// UTF-8 safe output helpers
+// ---------------------------------------------------------------------------
+
+/// Find how many bytes at the end of `buf` form an incomplete UTF-8 sequence.
+/// Returns 0 if the buffer ends on a valid boundary.
+pub(crate) fn incomplete_utf8_tail(buf: &[u8]) -> usize {
+    if buf.is_empty() {
+        return 0;
+    }
+    // Check up to 3 trailing bytes (max UTF-8 continuation length - 1)
+    let check_len = buf.len().min(3);
+    for i in 1..=check_len {
+        let byte = buf[buf.len() - i];
+        if byte < 0x80 {
+            // ASCII — previous bytes (if any) were stray continuation bytes
+            return 0;
+        }
+        if byte >= 0xC0 {
+            // This is a leading byte — determine expected sequence length
+            let seq_len = if byte < 0xE0 {
+                2
+            } else if byte < 0xF0 {
+                3
+            } else {
+                4
+            };
+            if i < seq_len {
+                // Incomplete: we have `i` bytes but need `seq_len`
+                return i;
+            }
+            // Complete sequence
+            return 0;
+        }
+        // 0x80..0xBF — continuation byte, keep scanning
+    }
+    0
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

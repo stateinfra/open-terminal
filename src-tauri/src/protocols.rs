@@ -5,6 +5,7 @@ use std::thread;
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
+use crate::helpers::incomplete_utf8_tail;
 use crate::ssh::ChannelWriter;
 use crate::types::*;
 
@@ -40,6 +41,7 @@ pub fn create_telnet_session(
     let sid = session_id.clone();
     thread::spawn(move || {
         let mut buf = [0u8; 4096];
+        let mut leftover = Vec::new();
         // Set non-blocking for reads
         writer.set_nonblocking(true).ok();
 
@@ -58,19 +60,17 @@ pub fn create_telnet_session(
                 Ok(0) => break,
                 Ok(n) => {
                     // Basic telnet: strip IAC commands (0xFF ...)
-                    let mut clean = Vec::with_capacity(n);
+                    let mut clean = Vec::with_capacity(leftover.len() + n);
+                    clean.append(&mut leftover);
                     let mut i = 0;
                     while i < n {
                         if buf[i] == 0xFF && i + 2 < n {
-                            // IAC DO/DONT/WILL/WONT - respond with WONT/DONT
                             let cmd = buf[i + 1];
                             let opt = buf[i + 2];
                             if cmd == 0xFD {
-                                // DO -> respond WONT
                                 let mut w = &writer;
                                 w.write_all(&[0xFF, 0xFC, opt]).ok();
                             } else if cmd == 0xFB {
-                                // WILL -> respond DONT
                                 let mut w = &writer;
                                 w.write_all(&[0xFF, 0xFE, opt]).ok();
                             }
@@ -83,7 +83,12 @@ pub fn create_telnet_session(
                         }
                     }
                     if !clean.is_empty() {
-                        let data = String::from_utf8_lossy(&clean).to_string();
+                        let tail = incomplete_utf8_tail(&clean);
+                        let valid = clean.len() - tail;
+                        if tail > 0 {
+                            leftover.extend_from_slice(&clean[valid..]);
+                        }
+                        let data = String::from_utf8_lossy(&clean[..valid]).to_string();
                         let _ = app_handle.emit("term-output", TermOutput {
                             session_id: sid.clone(),
                             data,
@@ -146,6 +151,7 @@ pub fn create_serial_session(
     let sid = session_id.clone();
     thread::spawn(move || {
         let mut buf = [0u8; 1024];
+        let mut leftover = Vec::new();
         let mut port_writer = port;
 
         loop {
@@ -158,10 +164,19 @@ pub fn create_serial_session(
             }
 
             // Read serial data
-            match reader.read(&mut buf) {
+            let start = leftover.len();
+            buf[..start].copy_from_slice(&leftover);
+            leftover.clear();
+            match reader.read(&mut buf[start..]) {
                 Ok(0) => break,
                 Ok(n) => {
-                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let total = start + n;
+                    let tail = incomplete_utf8_tail(&buf[..total]);
+                    let valid = total - tail;
+                    if tail > 0 {
+                        leftover.extend_from_slice(&buf[valid..total]);
+                    }
+                    let data = String::from_utf8_lossy(&buf[..valid]).to_string();
                     let _ = app_handle.emit("term-output", TermOutput {
                         session_id: sid.clone(),
                         data,

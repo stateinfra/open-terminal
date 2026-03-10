@@ -141,6 +141,15 @@ pub fn run() {
             // Auto Connect
             ssh::auto_connect_session,
         ])
+        .setup(|app| {
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::{Manager, TitleBarStyle};
+                let window = app.get_webview_window("main").unwrap();
+                window.set_title_bar_style(TitleBarStyle::Overlay)?;
+            }
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

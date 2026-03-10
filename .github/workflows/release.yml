@@ -79,5 +79,5 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "Open Terminal ${{ github.ref_name }}"
           releaseBody: "See the assets for platform installers."
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false

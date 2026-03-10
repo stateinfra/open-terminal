@@ -88,11 +88,21 @@ pub fn create_local_session(shell: Option<String>, app_handle: AppHandle) -> Res
     let sid = session_id.clone();
     thread::spawn(move || {
         let mut buf = [0u8; 8192];
+        let mut leftover = Vec::new();
         loop {
-            match reader.read(&mut buf) {
+            let start = leftover.len();
+            buf[..start].copy_from_slice(&leftover);
+            leftover.clear();
+            match reader.read(&mut buf[start..]) {
                 Ok(0) => break,
                 Ok(n) => {
-                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let total = start + n;
+                    let tail = incomplete_utf8_tail(&buf[..total]);
+                    let valid = total - tail;
+                    if tail > 0 {
+                        leftover.extend_from_slice(&buf[valid..total]);
+                    }
+                    let data = String::from_utf8_lossy(&buf[..valid]).to_string();
                     let _ = app_handle.emit("term-output", TermOutput {
                         session_id: sid.clone(),
                         data,

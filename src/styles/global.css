@@ -747,7 +747,7 @@ html, body, #root {
   box-shadow: 0 4px 16px rgba(0,0,0,0.6);
   overflow: hidden;
 }
-.dialog--wide { width: 32rem; }
+.dialog--wide { width: 32rem; min-height: 28rem; }
 .dialog__header {
   display: flex; align-items: center; gap: 0.35rem;
   padding: 0.35rem 0.5rem; background: var(--surface0);
